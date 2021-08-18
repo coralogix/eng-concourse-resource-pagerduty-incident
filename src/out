@@ -1,0 +1,27 @@
+#! /usr/bin/env bash
+
+set -euo pipefail
+
+input_json="$(cat)"
+
+api_key=$(            echo "$input_json" | jq -r '.source.api_key' )
+from_pagerduty_user=$(echo "$input_json" | jq -r '.source.from_pagerduty_user')
+include_build_link=$( echo "$input_json" | jq -r '.source.include_build_link? // true')
+incident=$(           echo "$input_json" | jq -c '.params' )
+
+if [[ "$include_build_link" == 'true' ]]; then
+  incident=$(echo "$incident" | jq -c \
+    --arg build_url "$ATC_EXTERNAL_URL/builds/$BUILD_ID" \
+    '. * { "incident" : { "body" : { "details" : .incident.body.details + " <a href=\"$build_url\">Link to Build</a>" } } }')
+fi
+
+curl 1>&2 -XPOST \
+  --header "Authorization: Token token=$api_key" \
+  --header "Accept: application/vnd.pagerduty+json;version=2" \
+  --header "Content-Type: application/json" \
+  --header "From: $from_pagerduty_user" \
+  --data "$incident" \
+  --silent \
+  https://api.pagerduty.com/incidents
+
+echo '{"version":{"hash":"none"},"metadata":[]}'
