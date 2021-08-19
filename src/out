@@ -28,6 +28,9 @@ fi
 num_retries=10 # arbitrary hardcode
 curl 1>&2 -XPOST \
   --retry "$num_retries" \
+  --no-progress-meter \
+  --show-error \
+  --fail-with-body \
   --header "Authorization: Token token=$api_key" \
   --header "Accept: application/vnd.pagerduty+json;version=2" \
   --header "Content-Type: application/json" \
