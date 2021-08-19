@@ -4,24 +4,36 @@ set -euo pipefail
 
 input_json="$(cat)"
 
-api_key=$(            echo "$input_json" | jq -r '.source.api_key' )
-from_pagerduty_user=$(echo "$input_json" | jq -r '.source.from_pagerduty_user')
-include_build_link=$( echo "$input_json" | jq -r '.source.include_build_link? // true')
-incident=$(           echo "$input_json" | jq -c '.params' )
+api_key=$(                  echo "$input_json" | jq -r '.source.api_key' )
+from_pagerduty_user=$(      echo "$input_json" | jq -r '.source.from_pagerduty_user')
+autogenerate_incident_key=$(echo "$input_json" | jq -r '.source.autogenerate_incident_key? // true')
+include_build_link=$(       echo "$input_json" | jq -r '.source.include_build_link? // true')
+incident=$(                 echo "$input_json" | jq -c '.params' )
+
+build_url="$ATC_EXTERNAL_URL/builds/$BUILD_ID"
+
+if [[ "$autogenerate_incident_key" == 'true' ]]; then
+  incident=$(echo "$incident" | jq -c \
+    --arg build_url "$build_url" \
+    '. * { "incident" : { "incident_key" : $build_url } }')
+fi
 
 if [[ "$include_build_link" == 'true' ]]; then
   incident=$(echo "$incident" | jq -c \
-    --arg build_url "$ATC_EXTERNAL_URL/builds/$BUILD_ID" \
+    --arg build_url "$build_url" \
     '. * { "incident" : { "body" : { "details" : .incident.body.details + " <a href=\"$build_url\">Link to Build</a>" } } }')
 fi
 
+# note that --retry correctly retries only on timeouts and 429 (too many requests) not for unretriable errors
+num_retries=10 # arbitrary hardcode
 curl 1>&2 -XPOST \
+  --silent \
+  --retry "$num_retries" \
   --header "Authorization: Token token=$api_key" \
   --header "Accept: application/vnd.pagerduty+json;version=2" \
   --header "Content-Type: application/json" \
   --header "From: $from_pagerduty_user" \
   --data "$incident" \
-  --silent \
   https://api.pagerduty.com/incidents
 
 echo '{"version":{"hash":"none"},"metadata":[]}'

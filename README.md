@@ -7,6 +7,9 @@ Lightly adapted from the [PagerDuty documentation](https://developer.pagerduty.c
 * `api_key` : _Required_ (`string`). The PagerDuty API key to use.
 * `from_pagerduty_user` : _Required_ (`string`). The email address of a PagerDuty user
                           in whose name this Concourse resource is reporting the incident.
+* `autogenerate_incident_key`: _Optional_ (`bool`). If true, the resource will set the
+                               `incident_key` to the Concourse build URL. Defaults to
+                               `true`.
 * `include_build_link` : _Optional_ (`bool`). If true, the resource will append a link
                          to the build in the body of the incident before sending it to
                          the PagerDuty API. Defaults to `true`.
