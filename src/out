@@ -27,7 +27,6 @@ fi
 # note that --retry correctly retries only on timeouts and 429 (too many requests) not for unretriable errors
 num_retries=10 # arbitrary hardcode
 curl 1>&2 -XPOST \
-  --silent \
   --retry "$num_retries" \
   --header "Authorization: Token token=$api_key" \
   --header "Accept: application/vnd.pagerduty+json;version=2" \
