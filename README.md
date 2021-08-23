@@ -24,6 +24,8 @@ created to proceed.
 
 ### Events v2 API
 * `events_v2.routing_key`: _Required_ (`string`). The routing key for the PagerDuty Events V2 API integration.
+* `events_v2.client`: _Optional_ (`string`). When triggering alerts, the client to attach to the payload. Defaults to `Concourse`.
+* `events_v2.client_url`: _Optional_ (`string`). When triggering alerts, the client URL to attach to the payload. Defaults to `$ATC_EXTERNAL_URL`.
 * `events_v2.attach_build_url_to_links`: _Optional_ (`bool`). If true, the resource will attach a link to the
                                          build in the payload's links section. Defaults to `true`.
 * `events_v2.attach_timestamp`: _Optional_ (`bool`). If true, and if a timestamp is not provided in the 

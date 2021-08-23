@@ -55,6 +55,8 @@ if [[ "$rest_api" != 'null' ]]; then
 
 elif [[ "$events_v2_api" != 'null' ]]; then
   routing_key=$(              echo "$input_json" | jq -r '.source.events_v2.routing_key? // ""')
+  client=$(                   echo "$input_json" | jq -r '.source.events_v2.client? // ""')
+  client_url=$(               echo "$input_json" | jq -r '.source.events_v2.client_url? // ""')
   attach_build_url_to_links=$(echo "$input_json" | jq -r '.source.events_v2.attach_build_url_to_links? // true')
   attach_timestamp=$(         echo "$input_json" | jq -r '.source.events_v2.attach_timestamp? // true')
 
@@ -95,44 +97,57 @@ elif [[ "$events_v2_api" != 'null' ]]; then
     exit 1
   fi
 
-  if [[ "$event_type" == 'alert' ]]; then
-    if [[ "$event_action" == 'trigger' ]] && [[ -z "$summary" ]] ; then
+  if [[ "$event_type" == 'alert' ]] && [[ "$event_action" == 'trigger' ]] ; then
+    if [[ -z "$summary" ]] ; then
       echo >&2 "[ERROR][summary: $summary] You must define a summary, it is required by PagerDuty!"
       exit 1
     fi
 
-    if [[ "$event_action" == 'trigger' ]] && [[ -z "$source" ]]; then
+    if [[ -z "$source" ]]; then
       echo >&2 "[ERROR][source: $source] You must define a source, it is required by PagerDuty!"
       exit 1
     fi
 
-    if [[ "$event_action" == 'trigger' ]] && [[ -z "$severity" ]]; then
+    if [[ -z "$severity" ]]; then
       echo >&2 "[ERROR][severity: $severity] You must define a severity, it is required by PagerDuty! You may choose from: critical, error, warning, info"
       exit 1
     fi
 
-    if [[ "$event_action" == 'trigger' ]] && [[ -z "$timestamp" ]] && [[ "$attach_timestamp" == 'true' ]]; then
+    if [[ -n "$client" ]]; then
+      client='Concourse'
+    fi
+
+    if [[ -n "$client_url" ]]; then
+      client_url="$ATC_EXTERNAL_URL"
+    fi
+
+    if [[ -z "$timestamp" ]] && [[ "$attach_timestamp" == 'true' ]]; then
       timestamp=$(date --iso-8601=ns)
     fi
 
-    if [[ "$event_action" == 'trigger' ]] && [[ -n "$custom_details_file" ]]; then
+    if [[ -n "$custom_details_file" ]]; then
       custom_details=$(jq -nc \
         --argjson custom_details "$custom_details" \
         --slurpfile additional_custom_details "$custom_details_file" \
         '$custom_details * $additional_custom_details')
     fi
 
-    if [[ "$event_action" == 'trigger' ]] && [[ "$attach_build_url_to_links" == 'true' ]]; then
+    if [[ "$attach_build_url_to_links" == 'true' ]]; then
       links=$(jq -nc \
         --argjson links "$links" \
         --arg build_url "$build_url" \
         '$links + [{"text": "Link to Build", "href": $build_url}]')
     fi
+  elif [[ "$event_type" == 'alert' ]]; then
+    client=''
+    client_url=''
   elif [[ "$event_type" == 'change' ]]; then
     if [[ -z "$summary" ]] ; then
       echo >&2 "[ERROR][summary: $summary] You must define a summary, it is required by PagerDuty!"
       exit 1
     fi
+    client=''
+    client_url=''
     if [[ -z "$timestamp" ]] && [[ "$attach_timestamp" == 'true' ]]; then
       timestamp=$(date --iso-8601=ns)
     fi
@@ -158,6 +173,12 @@ elif [[ "$events_v2_api" != 'null' ]]; then
 
   if [[ -n "$dedup_key" ]]; then
     payload=$(echo "$payload" | jq -cn --arg dedup_key "$dedup_key" '.* {"dedup_key: $dedup_key}')
+  fi
+  if [[ -n "$client" ]]; then
+    payload=$(echo "$payload" | jq -cn --arg client "$client" ' .* {"client": $client}')
+  fi
+  if [[ -n "$client_url" ]]; then
+    payload=$(echo "$payload" | jq -cn --arg client_url "$client_url" ' .* {"client_url": $client_url}')
   fi
   if [[ -n "$summary" ]]; then
     payload=$(echo "$payload" | jq -cn --arg summary "$summary" '. * {"payload":{"summary": $summary}}')
