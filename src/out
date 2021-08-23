@@ -4,38 +4,205 @@ set -euo pipefail
 
 input_json="$(cat)"
 
-api_key=$(                  echo "$input_json" | jq -r '.source.api_key' )
-from_pagerduty_user=$(      echo "$input_json" | jq -r '.source.from_pagerduty_user')
-autogenerate_incident_key=$(echo "$input_json" | jq -r '.source.autogenerate_incident_key? // true')
-include_build_link=$(       echo "$input_json" | jq -r '.source.include_build_link? // true')
-incident=$(                 echo "$input_json" | jq -c '.params' )
+rest_api=$(              echo "$input_json" | jq -cM '.source.rest')
+events_v2_api=$(         echo "$input_json" | jq -cM '.source.events_v2')
+
+if [[ "$rest_api" == 'null' ]] && [[ "$events_v2_api" == 'null' ]]; then
+  echo >&2 '[ERROR] You must define either "rest" or "events_v2" in the resource source - you cannot leave them both undefined!'
+  exit 1
+fi
+
+if [[ "$rest_api" != 'null' ]] && [[ "$events_v2_api" != 'null' ]]; then
+  echo >&2 '[ERROR] You must define either "rest" or "events_v2" in the resource source - you cannot define both of them at once!'
+  exit 1
+fi
 
 build_url="$ATC_EXTERNAL_URL/builds/$BUILD_ID"
 
-if [[ "$autogenerate_incident_key" == 'true' ]]; then
-  incident=$(echo "$incident" | jq -c \
-    --arg build_url "$build_url" \
-    '. * { "incident" : { "incident_key" : $build_url } }')
-fi
+if [[ "$rest_api" != 'null' ]]; then
+  api_key=$(                  echo "$input_json" | jq -r '.source.rest.api_key' )
+  from_pagerduty_user=$(      echo "$input_json" | jq -r '.source.rest.from_pagerduty_user')
+  autogenerate_incident_key=$(echo "$input_json" | jq -r '.source.rest.autogenerate_incident_key? // true')
+  include_build_link=$(       echo "$input_json" | jq -r '.source.rest.include_build_link? // true')
+  incident=$(                 echo "$input_json" | jq -c '.params' )
 
-if [[ "$include_build_link" == 'true' ]]; then
-  incident=$(echo "$incident" | jq -c \
-    --arg build_url "$build_url" \
-    '. * { "incident" : { "body" : { "details" : .incident.body.details + " <a href=\"$build_url\">Link to Build</a>" } } }')
-fi
 
-# note that --retry correctly retries only on timeouts and 429 (too many requests) not for unretriable errors
-num_retries=10 # arbitrary hardcode
-curl 1>&2 -XPOST \
-  --retry "$num_retries" \
-  --no-progress-meter \
-  --show-error \
-  --fail-with-body \
-  --header "Authorization: Token token=$api_key" \
-  --header "Accept: application/vnd.pagerduty+json;version=2" \
-  --header "Content-Type: application/json" \
-  --header "From: $from_pagerduty_user" \
-  --data "$incident" \
-  https://api.pagerduty.com/incidents
+  if [[ "$autogenerate_incident_key" == 'true' ]]; then
+    incident=$(echo "$incident" | jq -c \
+      --arg build_url "$build_url" \
+      '. * { "incident" : { "incident_key" : $build_url } }')
+  fi
+
+  if [[ "$include_build_link" == 'true' ]]; then
+    incident=$(echo "$incident" | jq -c \
+      --arg build_url "$build_url" \
+      '. * { "incident" : { "body" : { "details" : .incident.body.details + " <a href=\"$build_url\">Link to Build</a>" } } }')
+  fi
+
+  # note that --retry correctly retries only on timeouts and 429 (too many requests) not for unretriable errors
+  num_retries=10 # arbitrary hardcode
+  curl 1>&2 -XPOST \
+    --retry "$num_retries" \
+    --no-progress-meter \
+    --show-error \
+    --fail-with-body \
+    --header "Authorization: Token token=$api_key" \
+    --header "Accept: application/vnd.pagerduty+json;version=2" \
+    --header "Content-Type: application/json" \
+    --header "From: $from_pagerduty_user" \
+    --data "$incident" \
+    https://api.pagerduty.com/incidents
+
+elif [[ "$events_v2_api" != 'null' ]]; then
+  routing_key=$(              echo "$input_json" | jq -r '.source.events_v2.routing_key? // ""')
+  attach_build_url_to_links=$(echo "$input_json" | jq -r '.source.events_v2.attach_build_url_to_links? // true')
+  attach_timestamp=$(         echo "$input_json" | jq -r '.source.events_v2.attach_timestamp? // true')
+
+  event_type=$(         echo "$input_json" | jq -r '.params.event_type? // "alert"')
+  event_action=$(       echo "$input_json" | jq -r '.params.event_action? // "trigger"')
+  dedup_key=$(          echo "$input_json" | jq -r --arg dedup_key "$build_url" '.params.dedup_key? // $dedup_key')
+  summary=$(            echo "$input_json" | jq -r '.params.summary? // ""')
+  source_=$(            echo "$input_json" | jq -r '.params.source? // ""')
+  severity=$(           echo "$input_json" | jq -r '.params.severity? // ""')
+  timestamp=$(          echo "$input_json" | jq -r '.params.timestamp? // ""')
+  component=$(          echo "$input_json" | jq -r '.params.component? // ""')
+  group=$(              echo "$input_json" | jq -r '.params.group? // ""')
+  class=$(              echo "$input_json" | jq -r '.params.class? // ""')
+  custom_details=$(     echo "$input_json" | jq -r '.params.custom_details? // {}')
+  custom_details_file=$(echo "$input_json" | jq -r '.params.custom_details_file? // ""')
+  images=$(             echo "$input_json" | jq -r '.params.images? // []')
+  links=$(              echo "$input_json" | jq -r '.params.links? // []')
+
+  if [[ -z "$routing_key" ]]; then
+    echo >&2 "[ERROR] You must define a routing_key!"
+    exit 1
+  fi
+
+  if [[ "$event_type" != 'alert' ]] && [[ "$event_type" != 'change' ]]; then
+    echo >&2 "[ERROR][event_type: $event_type] Unrecognized event type, must be either 'alert' or 'change'"
+    exit 1
+  fi
+
+  dedup_key_length=$(echo -n "$dedup_key" | wc -c)
+  if [[ $dedup_key_length -gt 255 ]]; then
+    echo >&2 "[ERROR][dedup_key: $dedup_key][length: $dedup_key_length] The dedup_key is longer than the PagerDuty API maximum length of 255 characters!"
+    exit 1
+  fi
+
+  summary_length=$(echo -n "$summary" | wc -c)
+  if [[ $summery_length -gt 1024 ]]; then
+    echo >&2 "[ERROR][summary: $summary][length: $summary_length] The summary is longer than the PagerDuty API maximum length of 1024 characters!"
+    exit 1
+  fi
+
+  if [[ "$event_type" == 'alert' ]]; then
+    if [[ "$event_action" == 'trigger' ]] && [[ -z "$summary" ]] ; then
+      echo >&2 "[ERROR][summary: $summary] You must define a summary, it is required by PagerDuty!"
+      exit 1
+    fi
+
+    if [[ "$event_action" == 'trigger' ]] && [[ -z "$source" ]]; then
+      echo >&2 "[ERROR][source: $source] You must define a source, it is required by PagerDuty!"
+      exit 1
+    fi
+
+    if [[ "$event_action" == 'trigger' ]] && [[ -z "$severity" ]]; then
+      echo >&2 "[ERROR][severity: $severity] You must define a severity, it is required by PagerDuty! You may choose from: critical, error, warning, info"
+      exit 1
+    fi
+
+    if [[ "$event_action" == 'trigger' ]] && [[ -z "$timestamp" ]] && [[ "$attach_timestamp" == 'true' ]]; then
+      timestamp=$(date --iso-8601=ns)
+    fi
+
+    if [[ "$event_action" == 'trigger' ]] && [[ -n "$custom_details_file" ]]; then
+      custom_details=$(jq -nc \
+        --argjson custom_details "$custom_details" \
+        --slurpfile additional_custom_details "$custom_details_file" \
+        '$custom_details * $additional_custom_details')
+    fi
+
+    if [[ "$event_action" == 'trigger' ]] && [[ "$attach_build_url_to_links" == 'true' ]]; then
+      links=$(jq -nc \
+        --argjson links "$links" \
+        --arg build_url "$build_url" \
+        '$links + [{"text": "Link to Build", "href": $build_url}]')
+    fi
+  elif [[ "$event_type" == 'change' ]]; then
+    if [[ -z "$summary" ]] ; then
+      echo >&2 "[ERROR][summary: $summary] You must define a summary, it is required by PagerDuty!"
+      exit 1
+    fi
+    if [[ -z "$timestamp" ]] && [[ "$attach_timestamp" == 'true' ]]; then
+      timestamp=$(date --iso-8601=ns)
+    fi
+    if [[ -n "$custom_details_file" ]]; then
+      custom_details=$(jq -nc \
+        --argjson custom_details "$custom_details" \
+        --slurpfile additional_custom_details "$custom_details_file" \
+        '$custom_details * $additional_custom_details')
+    fi
+    if [[ "$attach_build_url_to_links" == 'true' ]]; then
+      links=$(jq -nc \
+        --argjson links "$links" \
+        --arg build_url "$build_url" \
+        '$links + [{"text": "Link to Build", "href": $build_url}]')
+    fi
+  fi
+
+  # required payload
+  payload=$(jq -cn
+    --arg routing_key  "$routing_key"
+    --arg event_action "$event_action"
+    '{"routing_key": $routing_key, "event_action": $event_action }')
+
+  if [[ -n "$dedup_key" ]]; then
+    payload=$(echo "$payload" | jq -cn --arg dedup_key "$dedup_key" '.* {"dedup_key: $dedup_key}')
+  fi
+  if [[ -n "$summary" ]]; then
+    payload=$(echo "$payload" | jq -cn --arg summary "$summary" '. * {"payload":{"summary": $summary}}')
+  fi
+  if [[ -n "$source_" ]]; then
+    payload=$(echo "$payload" | jq -cn --arg source_ "$source_" '. * {"payload":{"source": $source_}}')
+  fi
+  if [[ -n "$severity" ]]; then
+    payload=$(echo "$payload" | jq -cn --arg severity "$severity" '. * {"payload":{"severity": $severity}}')
+  fi
+  if [[ -n "$timestamp" ]]; then
+    payload=$(echo "$payload" | jq -cn --arg timestamp "$timestamp" '. * {"payload":{"timestamp": $timestamp}}')
+  fi
+  if [[ -n "$component" ]]; then
+    payload=$(echo "$payload" | jq -cn --arg component "$component" '. * {"payload":{"component": $component}}')
+  fi
+  if [[ -n "$group" ]]; then
+    payload=$(echo "$payload" | jq -cn --arg group "$group" '. * {"payload":{"group": $group}}')
+  fi
+  if [[ -n "$class" ]]; then
+    payload=$(echo "$payload" | jq -cn --arg class "$class" '. * {"payload":{"class": $class}}')
+  fi
+  if [[ "$custom_details" != '{}' ]]; then
+    payload=$(echo "$payload" | jq -cn --argjson custom_details "$custom_details" '. * {"payload":{"custom_details": $custom_details}}')
+  fi
+  if [[ "$images" != '[]' ]]; then
+    payload=$(echo "$payload" | jq -cn --argjson images "$images" '. * {"payload":{"images": $images}}')
+  fi
+  if [[ "$links" != '[]' ]]; then
+    payload=$(echo "$payload" | jq -cn --argjson links "$links" '. * {"payload":{"links": $links}}')
+  fi
+
+  # note that --retry correctly retries only on timeouts and 429 (too many requests) not for unretriable errors
+  pagerduty_endpoint='https://events.pagerduty.com/v2/enqueue'
+  if [[ "$event_type" == 'change' ]]; then
+    pagerduty_endpoint='https://events.pagerduty.com/v2/change/enqueue'
+  fi
+  num_retries=10 # arbitrary hardcode
+  curl 1>&2 -XPOST \
+    --retry "$num_retries" \
+    --no-progress-meter \
+    --show-error \
+    --fail-with-body \
+    --data "$payload" \
+    "$pagerduty_endpoint"
+fi
 
 echo '{"version":{"hash":"none"},"metadata":[]}'
