@@ -53,6 +53,7 @@ Resource configuration (REST API)
 resources:
   - name: pagerduty-incident
     type: pagerduty-incident
+    check_every: never
     source:
       rest:
         api_key: (( pagerduty.api_key ))
@@ -65,6 +66,7 @@ Resource configuration (Events v2 API)
 resources:
   - name: pagerduty-incident
     type: pagerduty-incident
+    check_every: never
     source:
       events_v2:
         routing_key: ((pagerduty.routing_key))
@@ -119,6 +121,7 @@ resource_types:
 resources:
   - name: pagerduty-incident
     type: pagerduty-incident
+    check_every: never
     source:
       rest:
         api_key: (( pagerduty.api_key ))
@@ -170,6 +173,7 @@ resource_types:
 resources:
   - name: pagerduty-incident
     type: pagerduty-incident
+    check_every: never
     source:
       events_v2:
         routing_key: (( pagerduty.api_key ))

@@ -1,6 +1,6 @@
 FROM alpine:latest
 
-RUN apk --no-cache add bash jq curl
+RUN apk --no-cache add bash coreutils curl jq
 
 LABEL org.label-schema.schema-version="1.0" \
       org.label-schema.name="pagerduty-event-resource" \

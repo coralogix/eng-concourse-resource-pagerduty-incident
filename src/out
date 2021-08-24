@@ -92,7 +92,7 @@ elif [[ "$events_v2_api" != 'null' ]]; then
   fi
 
   summary_length=$(echo -n "$summary" | wc -c)
-  if [[ $summery_length -gt 1024 ]]; then
+  if [[ $summary_length -gt 1024 ]]; then
     echo >&2 "[ERROR][summary: $summary][length: $summary_length] The summary is longer than the PagerDuty API maximum length of 1024 characters!"
     exit 1
   fi
@@ -103,8 +103,8 @@ elif [[ "$events_v2_api" != 'null' ]]; then
       exit 1
     fi
 
-    if [[ -z "$source" ]]; then
-      echo >&2 "[ERROR][source: $source] You must define a source, it is required by PagerDuty!"
+    if [[ -z "$source_" ]]; then
+      echo >&2 "[ERROR][source: $source_] You must define a source, it is required by PagerDuty!"
       exit 1
     fi
 
@@ -166,49 +166,49 @@ elif [[ "$events_v2_api" != 'null' ]]; then
   fi
 
   # required payload
-  payload=$(jq -cn
-    --arg routing_key  "$routing_key"
-    --arg event_action "$event_action"
+  payload=$(jq -cn \
+    --arg routing_key  "$routing_key" \
+    --arg event_action "$event_action" \
     '{"routing_key": $routing_key, "event_action": $event_action }')
 
   if [[ -n "$dedup_key" ]]; then
-    payload=$(echo "$payload" | jq -cn --arg dedup_key "$dedup_key" '.* {"dedup_key: $dedup_key}')
+    payload=$(echo "$payload" | jq -c --arg dedup_key "$dedup_key" '.* {"dedup_key": $dedup_key}')
   fi
   if [[ -n "$client" ]]; then
-    payload=$(echo "$payload" | jq -cn --arg client "$client" ' .* {"client": $client}')
+    payload=$(echo "$payload" | jq -c --arg client "$client" ' .* {"client": $client}')
   fi
   if [[ -n "$client_url" ]]; then
-    payload=$(echo "$payload" | jq -cn --arg client_url "$client_url" ' .* {"client_url": $client_url}')
+    payload=$(echo "$payload" | jq -c --arg client_url "$client_url" ' .* {"client_url": $client_url}')
   fi
   if [[ -n "$summary" ]]; then
-    payload=$(echo "$payload" | jq -cn --arg summary "$summary" '. * {"payload":{"summary": $summary}}')
+    payload=$(echo "$payload" | jq -c --arg summary "$summary" '. * {"payload":{"summary": $summary}}')
   fi
   if [[ -n "$source_" ]]; then
-    payload=$(echo "$payload" | jq -cn --arg source_ "$source_" '. * {"payload":{"source": $source_}}')
+    payload=$(echo "$payload" | jq -c --arg source_ "$source_" '. * {"payload":{"source": $source_}}')
   fi
   if [[ -n "$severity" ]]; then
-    payload=$(echo "$payload" | jq -cn --arg severity "$severity" '. * {"payload":{"severity": $severity}}')
+    payload=$(echo "$payload" | jq -c --arg severity "$severity" '. * {"payload":{"severity": $severity}}')
   fi
   if [[ -n "$timestamp" ]]; then
-    payload=$(echo "$payload" | jq -cn --arg timestamp "$timestamp" '. * {"payload":{"timestamp": $timestamp}}')
+    payload=$(echo "$payload" | jq -c --arg timestamp "$timestamp" '. * {"payload":{"timestamp": $timestamp}}')
   fi
   if [[ -n "$component" ]]; then
-    payload=$(echo "$payload" | jq -cn --arg component "$component" '. * {"payload":{"component": $component}}')
+    payload=$(echo "$payload" | jq -c --arg component "$component" '. * {"payload":{"component": $component}}')
   fi
   if [[ -n "$group" ]]; then
-    payload=$(echo "$payload" | jq -cn --arg group "$group" '. * {"payload":{"group": $group}}')
+    payload=$(echo "$payload" | jq -c --arg group "$group" '. * {"payload":{"group": $group}}')
   fi
   if [[ -n "$class" ]]; then
-    payload=$(echo "$payload" | jq -cn --arg class "$class" '. * {"payload":{"class": $class}}')
+    payload=$(echo "$payload" | jq -c --arg class "$class" '. * {"payload":{"class": $class}}')
   fi
   if [[ "$custom_details" != '{}' ]]; then
-    payload=$(echo "$payload" | jq -cn --argjson custom_details "$custom_details" '. * {"payload":{"custom_details": $custom_details}}')
+    payload=$(echo "$payload" | jq -c --argjson custom_details "$custom_details" '. * {"payload":{"custom_details": $custom_details}}')
   fi
   if [[ "$images" != '[]' ]]; then
-    payload=$(echo "$payload" | jq -cn --argjson images "$images" '. * {"payload":{"images": $images}}')
+    payload=$(echo "$payload" | jq -c --argjson images "$images" '. * {"images": $images}')
   fi
   if [[ "$links" != '[]' ]]; then
-    payload=$(echo "$payload" | jq -cn --argjson links "$links" '. * {"payload":{"links": $links}}')
+    payload=$(echo "$payload" | jq -c --argjson links "$links" '. * {"links": $links}')
   fi
 
   # note that --retry correctly retries only on timeouts and 429 (too many requests) not for unretriable errors
@@ -216,12 +216,14 @@ elif [[ "$events_v2_api" != 'null' ]]; then
   if [[ "$event_type" == 'change' ]]; then
     pagerduty_endpoint='https://events.pagerduty.com/v2/change/enqueue'
   fi
+
   num_retries=10 # arbitrary hardcode
   curl 1>&2 -XPOST \
     --retry "$num_retries" \
     --no-progress-meter \
     --show-error \
     --fail-with-body \
+    --header "Content-Type: application/json" \
     --data "$payload" \
     "$pagerduty_endpoint"
 fi
