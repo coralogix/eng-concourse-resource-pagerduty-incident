@@ -1,5 +1,5 @@
 # eng-concourse-resource-pagerduty-incident
-A resource type for Concourse CI which creates a PagerDuty incident.
+A resource type for Concourse CI which creates a PagerDuty incident, either through the REST API or through the Events v2 API. It also supports submitting change events through the Events v2 API.
 
 Lightly adapted from the PagerDuty documentation of the [REST API](https://developer.pagerduty.com/api-reference/reference/REST/openapiv3.json/paths/~1incidents/post) and the [Events v2 API](https://developer.pagerduty.com/docs/events-api-v2/overview/)
 
